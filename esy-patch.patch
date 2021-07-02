@@ -1,0 +1,419 @@
+From 8510e5701aa20b2b10033d3c63c1c9760c187e3b Mon Sep 17 00:00:00 2001
+From: Manas <prometheansacrifice@gmail.com>
+Date: Tue, 6 Aug 2019 22:40:48 +0530
+Subject: [PATCH 1/2] OCaml 4.09.0 support
+
+---
+ .ci/build.yaml          | 36 +++++++++++++++++++++++++++++++++
+ .gitattributes          | 13 ++++++++++++
+ .gitignore              |  4 ++++
+ .npmignore              |  1 +
+ azure-pipelines.yml     | 25 +++++++++++++++++++++++
+ clone-flexdll           | 16 +++++++++++++++
+ configure-windows       | 22 +++++++++++++++++++++
+ esy-build               | 24 ++++++++++++++++++++++
+ esy-configure           | 29 +++++++++++++++++++++++++++
+ esy.lock/.gitattributes |  3 +++
+ esy.lock/.gitignore     |  3 +++
+ esy.lock/index.json     | 19 ++++++++++++++++++
+ package.json            | 44 +++++++++++++++++++++++++++++++++++++++++
+ test-app/hello.ml       |  1 +
+ test-app/package.json   | 20 +++++++++++++++++++
+ 15 files changed, 260 insertions(+)
+ create mode 100644 .ci/build.yaml
+ create mode 100644 .npmignore
+ create mode 100644 azure-pipelines.yml
+ create mode 100644 clone-flexdll
+ create mode 100644 configure-windows
+ create mode 100755 esy-build
+ create mode 100755 esy-configure
+ create mode 100644 esy.lock/.gitattributes
+ create mode 100644 esy.lock/.gitignore
+ create mode 100644 esy.lock/index.json
+ create mode 100644 package.json
+ create mode 100644 test-app/hello.ml
+ create mode 100644 test-app/package.json
+
+diff --git a/.ci/build.yaml b/.ci/build.yaml
+new file mode 100644
+index 00000000000..75fa10a7396
+--- /dev/null
++++ b/.ci/build.yaml
+@@ -0,0 +1,36 @@
++parameters:
++  host: ''
++  pool: ''
++  sign: false
++
++jobs:
++- job: ${{ parameters.host }}
++  pool: ${{ parameters.pool }}
++  steps:
++  - ${{ if eq(parameters.host, 'Windows') }}:
++    - script: 'npm install -g esy@latest --unsafe-perm'
++      displayName: 'Install esy'
++  - ${{ if ne(parameters.host, 'Windows') }}:
++    - script: 'sudo npm install -g esy@latest --unsafe-perm'
++      displayName: 'Install esy'
++  - script: esy install
++    displayName: 'Running esy install and esy build'
++  - bash: |
++      PKG=~/foo/esy-ocaml
++      APP=~/foo/test-app
++      mkdir -p $PKG
++      mkdir -p $APP
++      cp -R ./ $PKG/
++      cp -R test-app/* $APP/
++  - ${{ if eq(parameters.sign, 'false') }}:
++      - bash: |
++          cd ~/foo/test-app/
++          esy i
++          esy x hello
++      
++  - ${{ if eq(parameters.sign, 'true') }}:
++      - bash: |
++          cd ~/foo/test-app/
++          C:/npm/prefix/node_modules/esy/_build/default/bin/esy.exe i
++          C:/npm/prefix/node_modules/esy/_build/default/bin/esy.exe x hello
++
+diff --git a/.gitattributes b/.gitattributes
+index ce51bd79886..ba2fc914976 100644
+--- a/.gitattributes
++++ b/.gitattributes
+@@ -146,6 +146,19 @@ build-aux/config.guess text eol=lf
+ build-aux/config.sub text eol=lf
+ build-aux/install text eol=lf
+ build-aux/missing text eol=lf
++config/auto-aux/hasgot text eol=lf
++config/auto-aux/hasgot2 text eol=lf
++config/auto-aux/runtest text eol=lf
++config/auto-aux/searchpath text eol=lf
++config/auto-aux/solaris-ld text eol=lf
++config/auto-aux/tryassemble text eol=lf
++config/auto-aux/trycompile text eol=lf
++config/gnu/config.guess text eol=lf
++config/gnu/config.sub text eol=lf
++esy-build text eol=lf
++esy-configure text eol=lf
++clone-flexdll text eol=lf
++configure-windows text eol=lf
+ ocamldoc/remove_DEBUG text eol=lf
+ ocamltest/getocamloptdefaultflags text eol=lf
+ stdlib/Compflags text eol=lf
+diff --git a/.gitignore b/.gitignore
+index 04ddcaa008d..32856ef7bfe 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -266,3 +266,7 @@ _build
+ /yacc/ocamlyacc
+ /yacc/version.h
+ /yacc/.gdb_history
++
++_esy
++node_modules
++*~
+\ No newline at end of file
+diff --git a/.npmignore b/.npmignore
+new file mode 100644
+index 00000000000..3c3629e647f
+--- /dev/null
++++ b/.npmignore
+@@ -0,0 +1 @@
++node_modules
+diff --git a/azure-pipelines.yml b/azure-pipelines.yml
+new file mode 100644
+index 00000000000..0a0e9be99e1
+--- /dev/null
++++ b/azure-pipelines.yml
+@@ -0,0 +1,25 @@
++# Starter pipeline
++# Start with a minimal pipeline that you can customize to build and deploy your code.
++# Add steps that build, run tests, deploy, and more:
++# https://aka.ms/yaml
++
++
++jobs:
++- template: .ci/build.yaml  # Template reference
++  parameters:
++    host: macOS
++    pool:
++      vmImage: 'macOS-latest'
++
++- template: .ci/build.yaml  # Template reference
++  parameters:
++    host: Linux
++    pool:
++      vmImage: 'Ubuntu-latest'
++
++- template: .ci/build.yaml  # Template reference
++  parameters:
++    host: Windows
++    pool:
++      vmImage: 'windows-latest'
++    sign: true  # Extra step on Windows only
+diff --git a/clone-flexdll b/clone-flexdll
+new file mode 100644
+index 00000000000..ce39bb0f1cb
+--- /dev/null
++++ b/clone-flexdll
+@@ -0,0 +1,16 @@
++#! /bin/sh
++
++# clone-flexdll
++#
++# Brings in flexdll, if necessary
++
++if [ -d "flexdll" ] && [ -f "flexdll/flexdll.c" ]; then
++    echo "[Flexdll] Already present, no need to clone."
++else
++    echo "[Flexdll] Cloning..."
++    git clone https://github.com/esy-ocaml/flexdll.git
++    cd flexdll
++    git checkout f84baaeae463f96f9582883a9cfb7dd1096757ff
++    cd ..
++    echo "[Flexdll] Clone successful!"
++fi
+diff --git a/configure-windows b/configure-windows
+new file mode 100644
+index 00000000000..4040b49ea80
+--- /dev/null
++++ b/configure-windows
+@@ -0,0 +1,22 @@
++#! /bin/sh
++
++# configure-windows
++#
++# Creates a native Windows MingW build, based on:
++# https://github.com/ocaml/ocaml/blob/trunk/README.win32.adoc
++
++
++export prefix=C:/ocamlmgw64
++while : ; do
++    case "$1" in
++        "") break;;
++        -prefix|--prefix)
++            prefix=$2; shift;;
++    esac
++    shift
++done
++
++echo "[configure-windows] Setting up flexdll"
++./clone-flexdll
++./configure --build=x86_64-unknown-cygwin --host=x86_64-w64-mingw32 --prefix=$prefix
++make flexdll
+diff --git a/esy-build b/esy-build
+new file mode 100755
+index 00000000000..789edc99874
+--- /dev/null
++++ b/esy-build
+@@ -0,0 +1,24 @@
++#! /bin/bash
++
++# esy-build
++#
++# Wrapper to execute appropriate build strategy, based on platform
++
++set -u
++set -e
++set -o pipefail
++
++case "$(uname -s)" in
++    CYGWIN*|MINGW32*|MSYS*)
++        echo "[esy-build] Detected windows environment..."
++        make -j1 world.opt
++        make flexlink.opt
++        ;;
++    *)
++        echo "[esy-build] Detected OSX / Linux environment"
++        make -j4 world.opt
++        ;;
++esac
++
++# Common build steps
++make install
+diff --git a/esy-configure b/esy-configure
+new file mode 100755
+index 00000000000..85a8d2da80c
+--- /dev/null
++++ b/esy-configure
+@@ -0,0 +1,29 @@
++#! /bin/bash
++
++# esy-configure
++#
++# Wrapper to delegate to configuration to the 
++# appropriate `configure` strategy based on the active platform.
++#
++# Today, OCaml has separate build strategies:
++# - Linux, OSX, Cygwin (gcc) - https://github.com/ocaml/ocaml/blob/trunk/INSTALL.adoc
++# - Windows, Cygin (mingw) - https://github.com/ocaml/ocaml/blob/trunk/README.win32.adoc
++#
++# We want `esy` to work cross-platform, so this is a shim script that will delegate to the
++# appropriate script depending on the platform. We assume that if the platform is `CYGWIN`
++# that the `mingw` (native executable) strategy is desired.
++
++set -u
++set -e
++set -o pipefail
++
++case "$(uname -s)" in
++    CYGWIN*|MINGW32*|MSYS*)
++        echo "[esy-configure] Detected windows environment..."
++        ./configure-windows "$@"
++        ;;
++    *)
++        echo "[esy-configure] Detected OSX / Linux environment"
++        ./configure "$@"
++        ;;
++esac
+diff --git a/esy.lock/.gitattributes b/esy.lock/.gitattributes
+new file mode 100644
+index 00000000000..e0b4e26c5ad
+--- /dev/null
++++ b/esy.lock/.gitattributes
+@@ -0,0 +1,3 @@
++
++# Set eol to LF so files aren't converted to CRLF-eol on Windows.
++* text eol=lf linguist-generated
+diff --git a/esy.lock/.gitignore b/esy.lock/.gitignore
+new file mode 100644
+index 00000000000..a221be227e3
+--- /dev/null
++++ b/esy.lock/.gitignore
+@@ -0,0 +1,3 @@
++
++# Reset any possible .gitignore, we want all esy.lock to be un-ignored.
++!*
+diff --git a/esy.lock/index.json b/esy.lock/index.json
+new file mode 100644
+index 00000000000..e2c79993bfd
+--- /dev/null
++++ b/esy.lock/index.json
+@@ -0,0 +1,19 @@
++{
++  "checksum": "0cc961f41dbf4ff5ab5654751a4ba36e",
++  "root": "ocaml@link-dev:./package.json",
++  "node": {
++    "ocaml@link-dev:./package.json": {
++      "id": "ocaml@link-dev:./package.json",
++      "name": "ocaml",
++      "version": "link-dev:./package.json",
++      "source": {
++        "type": "link-dev",
++        "path": ".",
++        "manifest": "package.json"
++      },
++      "overrides": [],
++      "dependencies": [],
++      "devDependencies": []
++    }
++  }
++}
+\ No newline at end of file
+diff --git a/package.json b/package.json
+new file mode 100644
+index 00000000000..ad2fc3a4b3d
+--- /dev/null
++++ b/package.json
+@@ -0,0 +1,44 @@
++{
++  "name": "ocaml",
++  "version": "4.9.0",
++  "description": "OCaml Compiler as an esy npm Package",
++  "versionNotes": [
++    "See the README for notes about how the version of this package corresponds to the official OCaml compiler version."
++  ],
++  "esy": {
++    "build": [
++      "./esy-configure --disable-cfi --prefix $cur__install",
++      "./esy-build"
++    ],
++    "buildsInSource": true,
++    "exportedEnv": {
++      "OCAMLLIB": {
++        "val": "#{ocaml.lib / 'ocaml'}",
++        "scope": "global"
++      },
++      "CAML_LD_LIBRARY_PATH": {
++        "val": "#{ocaml.lib / 'ocaml' / 'stublibs' : ocaml.lib / 'ocaml' : $CAML_LD_LIBRARY_PATH}",
++        "scope": "global"
++      },
++      "OCAML_TOPLEVEL_PATH": {
++        "val": "#{ocaml.lib / 'ocaml'}",
++        "scope": "global"
++      }
++    }
++  },
++  "repository": {
++    "type": "git",
++    "url": "git://github.com/esy-ocaml/ocaml.git"
++  },
++  "keywords": [
++    "ocaml",
++    "flow",
++    "opam"
++  ],
++  "author": "",
++  "license": "QPL - See LICENSE at https://github.com/ocaml/ocaml",
++  "bugs": {
++    "url": "https://github.com/esy-ocaml/ocaml/issues"
++  },
++  "homepage": "https://github.com/esy-ocaml/ocaml#readme"
++}
+diff --git a/test-app/hello.ml b/test-app/hello.ml
+new file mode 100644
+index 00000000000..537510e030e
+--- /dev/null
++++ b/test-app/hello.ml
+@@ -0,0 +1 @@
++print_endline "Working as expected"
+diff --git a/test-app/package.json b/test-app/package.json
+new file mode 100644
+index 00000000000..e33b4c5830a
+--- /dev/null
++++ b/test-app/package.json
+@@ -0,0 +1,20 @@
++{
++  "name": "test-ocaml",
++  "version": "0.0.0",
++  "description": "My Project",
++  "esy": {
++    "buildsInSource": true,
++    "build": [
++      "ocamlopt -o #{self.target_dir / 'hello'} hello.ml"
++    ],
++    "install": [
++      "cp #{self.target_dir / 'hello'} #{self.bin}"
++    ]
++  },
++  "dependencies": {
++    "esy-ocaml": "*"
++  },
++  "resolutions": {
++    "esy-ocaml": "link:../esy-ocaml"
++  }
++}
+
+From 437a46e0c3ff5026c45424463b892b9da3d03946 Mon Sep 17 00:00:00 2001
+From: Jordan W <jordojw@gmail.com>
+Date: Thu, 2 Jan 2020 15:15:31 -0800
+Subject: [PATCH 2/2] Make make parallel again.
+
+I believe the parallelism bug in windows builds of OCaml was fixed in 4.04.
+---
+ esy-build | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/esy-build b/esy-build
+index 789edc99874..5f005b03cca 100755
+--- a/esy-build
++++ b/esy-build
+@@ -11,7 +11,7 @@ set -o pipefail
+ case "$(uname -s)" in
+     CYGWIN*|MINGW32*|MSYS*)
+         echo "[esy-build] Detected windows environment..."
+-        make -j1 world.opt
++        make -j4 world.opt
+         make flexlink.opt
+         ;;
+     *)
